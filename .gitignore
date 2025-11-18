@@ -1,7 +1,8 @@
 # Sensitive configuration files
 config.ini
 
-# Generated dashboard files
+# Generated dashboard files and output folder
+output/
 *_RTU_Overview.json
 *_Site_Overview.json
 *_import.json

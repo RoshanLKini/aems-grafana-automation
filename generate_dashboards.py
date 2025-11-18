@@ -1,7 +1,23 @@
 """
 Grafana Dashboard Generator
-Automates generation of Grafana dashboards using templates and config.ini
-Supports both file export and direct API upload to Grafana with basic authentication
+
+This script automates the generation of Grafana dashboards for building automation systems.
+It queries devices from a PostgreSQL datasource, creates separate dashboards for each device,
+and uploads them to Grafana via API.
+
+Features:
+- Auto-discovers devices from Grafana PostgreSQL datasource
+- Creates separate dashboard for each RTU device
+- Generates site overview dashboard
+- Supports basic authentication for Grafana API
+- Validates device point mappings
+- Saves all output to configurable directory
+
+Usage:
+    python generate_dashboards.py
+
+Configuration:
+    Edit config.ini to set campus, building, Grafana credentials, and device mappings
 """
 
 import json
@@ -14,15 +30,102 @@ import getpass
 import logging
 from requests.auth import HTTPBasicAuth
 
-# Configure logging
+# Configure logging to display informational messages
 logging.basicConfig(
     level=logging.INFO,
     format='%(levelname)s: %(message)s'
 )
 
 
+def get_variable_values(grafana_api, datasource_uid, campus, building):
+    """
+    Query Grafana PostgreSQL datasource to discover all devices for a campus/building.
+    
+    This function queries the topics table to find all devices that have ZoneTemperature
+    data points, which indicates they are active RTU devices.
+    
+    Args:
+        grafana_api: GrafanaAPI instance with connection details
+        datasource_uid: UID of the PostgreSQL datasource in Grafana
+        campus: Campus name (e.g., 'PNNL')
+        building: Building name (e.g., 'ROB')
+    
+    Returns:
+        List of device names (e.g., ['rtu01', 'rtu02', 'rtu03', 'rtu04'])
+        Empty list if query fails or no devices found
+    """
+    try:
+        # Query to get all RTU devices based on ZoneTemperature topic
+        query = f"select topic_name from topics where topic_name like '{campus}/{building}/%/ZoneTemperature'"
+        
+        # Use Grafana datasource query API to execute the SQL query
+        payload = {
+            "queries": [{
+                "datasource": {"type": "postgres", "uid": datasource_uid},
+                "rawSql": query,
+                "format": "table"
+            }]
+        }
+        
+        # Execute the query via Grafana API
+        response = requests.post(
+            f'{grafana_api.url}/api/ds/query',
+            auth=grafana_api.auth,
+            headers=grafana_api.headers,
+            json=payload,
+            verify=grafana_api.verify_ssl,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            devices = []
+            
+            # Parse the response to extract device names from topic paths
+            if 'results' in data:
+                for result_key in data['results']:
+                    result = data['results'][result_key]
+                    if 'frames' in result:
+                        for frame in result['frames']:
+                            if 'data' in frame and 'values' in frame['data']:
+                                for values in frame['data']['values']:
+                                    for topic_name in values:
+                                        # Topic format: campus/building/device/point
+                                        # Extract device name (index 2)
+                                        parts = topic_name.split('/')
+                                        if len(parts) >= 3:
+                                            device = parts[2]
+                                            if device not in devices:
+                                                devices.append(device)
+            
+            return sorted(devices)
+        else:
+            logging.error(f"Failed to query devices: {response.status_code}")
+            return []
+            
+    except Exception as e:
+        logging.error(f"Error querying devices: {e}")
+        return []
+
+
 def load_config(config_file='config.ini'):
-    """Load configuration from INI file"""
+    """
+    Load configuration from INI file.
+    
+    Reads campus/building information, output directory, timezone, and device mappings
+    from the config.ini file.
+    
+    Args:
+        config_file: Path to configuration file (default: 'config.ini')
+    
+    Returns:
+        Dictionary containing configuration values including:
+        - campus: Campus name
+        - building: Building name
+        - output_dir: Directory for generated files
+        - timezone: Timezone for dashboards
+        - device_mapping: Dictionary of device point mappings
+    """
     config = configparser.ConfigParser()
     config.read(config_file)
     
@@ -34,11 +137,12 @@ def load_config(config_file='config.ini'):
         'building': config.get(section, 'building', fallback='ROB'),
         'gateway_address': config.get(section, 'gateway-address', fallback=''),
         'prefix': config.get(section, 'prefix', fallback=''),
-        'output_dir': config.get(section, 'output-dir', fallback='.'),
+        'output_dir': config.get(section, 'output-dir', fallback='output'),
         'timezone': config.get(section, 'timezone', fallback='America/Los_Angeles')
     }
     
-    # Load device mapping if available
+    # Load device point mapping from config
+    # Maps generic point names to actual device point names
     if config.has_section('device_mapping'):
         result['device_mapping'] = dict(config.items('device_mapping'))
         logging.info(f"Loaded {len(result['device_mapping'])} device mappings from config")
@@ -50,27 +154,61 @@ def load_config(config_file='config.ini'):
 
 
 def load_template(template_file):
-    """Load dashboard template JSON file"""
+    """
+    Load dashboard template from JSON file.
+    
+    Args:
+        template_file: Path to JSON template file
+    
+    Returns:
+        Dictionary containing dashboard template
+    """
     with open(template_file, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
 def replace_topic_prefix(content, old_prefix, new_prefix):
-    """Replace topic name prefix in JSON content"""
+    """
+    Replace topic name prefix throughout the dashboard JSON.
+    
+    Updates all references from template prefix (e.g., 'PNNL/ROB')
+    to the configured campus/building prefix.
+    
+    Args:
+        content: Dashboard JSON content
+        old_prefix: Old topic prefix to replace
+        new_prefix: New topic prefix
+    
+    Returns:
+        Updated dashboard content
+    """
     content_str = json.dumps(content)
     content_str = content_str.replace(old_prefix, new_prefix)
     return json.loads(content_str)
 
 
 def apply_device_mapping(content, device_mapping):
-    """Apply device point name mapping to dashboard content"""
+    """
+    Validate device point mappings against dashboard content.
+    
+    Checks that device points used in the dashboard are defined in the
+    device_mapping section of config.ini. Logs warnings for unmapped points
+    and info for unused mappings.
+    
+    Args:
+        content: Dashboard JSON content
+        device_mapping: Dictionary of device point mappings from config
+    
+    Returns:
+        Unchanged dashboard content (validation only)
+    """
     if not device_mapping:
         logging.warning("No device mapping provided, skipping validation")
         return content
     
     content_str = json.dumps(content)
     
-    # Extract all point names used in the dashboard
+    # Extract all point names used in the dashboard using regex
     import re
     used_points = set(re.findall(r'/([A-Za-z0-9_]+)(?:\'|\s)', content_str))
     
@@ -78,14 +216,15 @@ def apply_device_mapping(content, device_mapping):
     mapped_points = set(device_mapping.values())
     
     # Find points used in dashboard but not in mapping
+    # Exclude known system points that aren't device-specific
     unmapped_points = used_points - mapped_points - {
-        'topics', 'data', 'meter', 'air_temperature', 'Watts'  # Known non-device points
+        'topics', 'data', 'meter', 'air_temperature', 'Watts'
     }
     
     if unmapped_points:
         logging.warning(f"Points in dashboard not in device_mapping: {sorted(unmapped_points)}")
     
-    # Find mapped points not used in dashboard
+    # Find mapped points not used in dashboard (informational)
     unused_mappings = mapped_points - used_points
     if unused_mappings:
         logging.info(f"Mapped points not used in this dashboard: {sorted(unused_mappings)}")
@@ -93,33 +232,140 @@ def apply_device_mapping(content, device_mapping):
     return content
 
 
-def generate_rtu_overview(template, config, datasource_uid):
-    """Generate RTU Overview dashboard from template"""
-    dashboard = template.copy()
+def create_dashboard_for_device(template, config, datasource_uid, device):
+    """
+    Create a customized dashboard for a single RTU device.
     
-    # Build the topic prefix from config
+    Takes the template dashboard and replaces all variable references with
+    the specific device name, creating a dedicated dashboard for that device.
+    
+    Args:
+        template: Dashboard template JSON
+        config: Configuration dictionary
+        datasource_uid: Grafana datasource UID
+        device: Device name (e.g., 'rtu01')
+    
+    Returns:
+        Dictionary containing configured dashboard for the device
+    """
+    # Create deep copy to avoid modifying template
+    dashboard = json.loads(json.dumps(template))
+    
     campus = config['campus']
     building = config['building']
-    new_prefix = f"{campus}/{building}"
     
-    # Replace the topic prefix in the entire dashboard
-    dashboard = replace_topic_prefix(dashboard, "PNNL/ROB", new_prefix)
+    # Replace all variable references with actual device name
+    # This converts dashboard from using $RTU_ROB variable to fixed device name
+    dashboard_str = json.dumps(dashboard)
+    dashboard_str = dashboard_str.replace('$RTU_ROB', device)
+    dashboard_str = dashboard_str.replace('${RTU_ROB}', device)
+    dashboard_str = dashboard_str.replace('PNNL/ROB', f"{campus}/{building}")
+    dashboard = json.loads(dashboard_str)
     
-    # Apply device mapping validation
-    dashboard = apply_device_mapping(dashboard, config.get('device_mapping', {}))
+    # Clean up panel titles to avoid redundancy
+    # In a single-device dashboard, we don't need device name in every panel title
+    if 'panels' in dashboard:
+        for panel in dashboard['panels']:
+            if 'title' in panel:
+                # Panel titles are already updated via string replacement above
+                # No additional modification needed
+                pass
     
-    # Update dashboard metadata
+    # Remove templating variables since we're using a fixed device name
+    # Variables are not needed when dashboard is device-specific
+    if 'templating' in dashboard:
+        dashboard['templating']['list'] = []
+    
+    # Update dashboard metadata with device-specific information
     timestamp = datetime.now().strftime('%Y-%m-%d %H%M%S')
-    dashboard['title'] = f"{campus} {building} - RTU Overview {timestamp}"
-    dashboard['id'] = None
-    dashboard['uid'] = None
-    dashboard['version'] = 0
+    dashboard['title'] = f"{campus} {building} - {device} Overview {timestamp}"
+    dashboard['id'] = None  # Let Grafana assign new ID
+    dashboard['uid'] = None  # Let Grafana assign new UID
+    dashboard['version'] = 0  # Start at version 0
     
-    # Update datasource UID if provided
+    # Update datasource UID to point to correct PostgreSQL datasource
     if datasource_uid:
         update_datasource_uid(dashboard, datasource_uid)
     
     return dashboard
+
+
+def generate_rtu_overview(template, config, datasource_uid, grafana_api=None, devices=None):
+    """
+    Generate RTU Overview dashboards from template.
+    
+    This function auto-discovers devices from Grafana and creates a separate
+    dashboard for each device found. If no devices are found, creates a single
+    dashboard with variable selector.
+    
+    Args:
+        template: Dashboard template JSON
+        config: Configuration dictionary
+        datasource_uid: Grafana PostgreSQL datasource UID
+        grafana_api: GrafanaAPI instance (optional, for device discovery)
+        devices: List of device names (optional, will query if not provided)
+    
+    Returns:
+        List of dictionaries, each containing:
+        - dashboard: Dashboard JSON
+        - device: Device name (or None for variable-based dashboard)
+        - filename: Suggested filename for the dashboard
+    """
+    campus = config['campus']
+    building = config['building']
+    
+    # Auto-discover devices from Grafana if not provided
+    if devices is None and grafana_api is not None:
+        logging.info(f"Querying devices from Grafana for {campus}/{building}...")
+        devices = get_variable_values(grafana_api, datasource_uid, campus, building)
+        if devices:
+            logging.info(f"Found {len(devices)} devices: {', '.join(devices)}")
+        else:
+            logging.warning("No devices found, using template defaults")
+            devices = None
+    
+    dashboards = []
+    
+    # Create separate dashboard for each device
+    if devices and len(devices) > 0:
+        logging.info(f"Creating separate dashboard for each of {len(devices)} devices...")
+        for device in devices:
+            dashboard = create_dashboard_for_device(template, config, datasource_uid, device)
+            dashboards.append({
+                'dashboard': dashboard,
+                'device': device,
+                'filename': f"{campus}_{building}_{device}_RTU_Overview.json"
+            })
+    else:
+        # Fallback: Single dashboard with variable selector
+        # Used when device auto-discovery fails or returns no results
+        dashboard = template.copy()
+        new_prefix = f"{campus}/{building}"
+        
+        # Replace the topic prefix in the entire dashboard
+        dashboard = replace_topic_prefix(dashboard, "PNNL/ROB", new_prefix)
+        
+        # Apply device mapping validation
+        dashboard = apply_device_mapping(dashboard, config.get('device_mapping', {}))
+        
+        # Update dashboard metadata
+        timestamp = datetime.now().strftime('%Y-%m-%d %H%M%S')
+        dashboard['title'] = f"{campus} {building} - RTU Overview {timestamp}"
+        dashboard['id'] = None
+        dashboard['uid'] = None
+        dashboard['version'] = 0
+        
+        # Update datasource UID if provided
+        if datasource_uid:
+            update_datasource_uid(dashboard, datasource_uid)
+        
+        dashboards.append({
+            'dashboard': dashboard,
+            'device': None,
+            'filename': f"{campus}_{building}_RTU_Overview.json"
+        })
+    
+    return dashboards
 
 
 def generate_site_overview(template, config, datasource_uid):
@@ -449,17 +695,23 @@ def main():
     campus = config['campus']
     building = config['building']
     
-    # Generate RTU Overview
-    rtu_dashboard = generate_rtu_overview(rtu_template, config, datasource_uid)
-    rtu_filename = f"{campus}_{building}_RTU_Overview.json"
-    rtu_filepath = save_dashboard(rtu_dashboard, rtu_filename, config['output_dir'])
-    logging.info(f"Generated RTU Overview: {rtu_filepath}")
+    # Generate RTU Overview dashboards (one per device if multiple devices found)
+    rtu_dashboards = generate_rtu_overview(rtu_template, config, datasource_uid, grafana_api=grafana_api)
     
-    # Generate RTU Overview import wrapper
-    rtu_import = create_import_wrapper(rtu_dashboard, folder_id if grafana_api else 0)
-    rtu_import_filename = f"{campus}_{building}_RTU_Overview_import.json"
-    rtu_import_filepath = save_dashboard(rtu_import, rtu_import_filename, config['output_dir'])
-    logging.debug(f"Generated RTU Overview import: {rtu_import_filepath}")
+    # Save each RTU dashboard
+    rtu_filepaths = []
+    for dash_info in rtu_dashboards:
+        dashboard = dash_info['dashboard']
+        filename = dash_info['filename']
+        device = dash_info['device']
+        
+        filepath = save_dashboard(dashboard, filename, config['output_dir'])
+        rtu_filepaths.append({'filepath': filepath, 'dashboard': dashboard, 'device': device, 'filename': filename})
+        
+        if device:
+            logging.info(f"Generated RTU Overview for {device}: {filepath}")
+        else:
+            logging.info(f"Generated RTU Overview: {filepath}")
     
     # Generate Site Overview
     site_dashboard = generate_site_overview(site_template, config, datasource_uid)
@@ -467,35 +719,36 @@ def main():
     site_filepath = save_dashboard(site_dashboard, site_filename, config['output_dir'])
     logging.info(f"Generated Site Overview: {site_filepath}")
     
-    # Generate Site Overview import wrapper
-    site_import = create_import_wrapper(site_dashboard, folder_id if grafana_api else 0)
-    site_import_filename = f"{campus}_{building}_Site_Overview_import.json"
-    site_import_filepath = save_dashboard(site_import, site_import_filename, config['output_dir'])
-    logging.debug(f"Generated Site Overview import: {site_import_filepath}")
-    
     # Upload to Grafana via API
     upload_responses = []
     if grafana_api:
         step_num += 1
         print(f"\n[{step_num}/6] Uploading dashboards to Grafana...")
         
-        # Upload RTU Overview
-        success, message, data = grafana_api.create_dashboard(rtu_dashboard, folder_id)
-        rtu_response = {
-            'dashboard': 'RTU Overview',
-            'success': success,
-            'message': message,
-            'data': data,
-            'timestamp': datetime.now().isoformat()
-        }
-        upload_responses.append(rtu_response)
-        
-        if success:
-            dashboard_url = f"{grafana_config['url']}{data.get('url', '')}"
-            logging.info(f"RTU Overview uploaded")
-            logging.info(f"URL: {dashboard_url}")
-        else:
-            logging.error(f"RTU Overview failed: {message}")
+        # Upload each RTU Overview dashboard
+        for rtu_info in rtu_filepaths:
+            dashboard = rtu_info['dashboard']
+            device = rtu_info['device']
+            
+            success, message, data = grafana_api.create_dashboard(dashboard, folder_id)
+            
+            dashboard_name = f"RTU Overview - {device}" if device else "RTU Overview"
+            rtu_response = {
+                'dashboard': dashboard_name,
+                'device': device,
+                'success': success,
+                'message': message,
+                'data': data,
+                'timestamp': datetime.now().isoformat()
+            }
+            upload_responses.append(rtu_response)
+            
+            if success:
+                dashboard_url = f"{grafana_config['url']}{data.get('url', '')}"
+                logging.info(f"{dashboard_name} uploaded")
+                logging.info(f"URL: {dashboard_url}")
+            else:
+                logging.error(f"{dashboard_name} failed: {message}")
         
         # Upload Site Overview
         success, message, data = grafana_api.create_dashboard(site_dashboard, folder_id)
@@ -520,6 +773,7 @@ def main():
             'upload_time': datetime.now().isoformat(),
             'grafana_url': grafana_config['url'],
             'folder_id': folder_id,
+            'devices_count': len(rtu_filepaths),
             'responses': upload_responses
         }
         response_filename = f"{campus}_{building}_upload_response_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -535,15 +789,20 @@ def main():
     print(f"  Campus/Building: {campus}/{building}")
     print(f"  Topic Prefix: {campus}/{building}")
     print(f"  Datasource UID: {datasource_uid}")
+    print(f"  RTU Dashboards: {len(rtu_filepaths)}")
     if grafana_api:
         print(f"  Grafana URL: {grafana_config['url']}")
         print(f"  Target Folder ID: {folder_id if 'folder_id' in locals() else 0}")
     print("  " + "=" * 56)
     print("  Generated Files:")
-    print(f"    • {rtu_filename} (UI import)")
-    print(f"    • {rtu_import_filename} (API import)")
-    print(f"    • {site_filename} (UI import)")
-    print(f"    • {site_import_filename} (API import)")
+    for rtu_info in rtu_filepaths:
+        device = rtu_info['device']
+        filename = rtu_info['filename']
+        if device:
+            print(f"    • {filename} ({device})")
+        else:
+            print(f"    • {filename}")
+    print(f"    • {site_filename} (Site Overview)")
     print("  " + "=" * 56)
     print("\nDashboard generation complete!")
     
@@ -552,7 +811,7 @@ def main():
         print(f"View them at: {grafana_config['url']}/dashboards")
     else:
         print("\nUsage:")
-        print("  - For Grafana UI: Upload the .json files (without _import)")
+        print("  - For Grafana UI: Upload the .json files")
         print("  - For Grafana API: Use the _import.json files")
 
 

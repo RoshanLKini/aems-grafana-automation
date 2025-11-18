@@ -716,15 +716,20 @@
           "mappings": [
             {
               "options": {
-                "0": {
-                  "color": "dark-purple",
-                  "index": 0,
-                  "text": "UNOCCUPIED"
-                },
                 "1": {
+                  "color": "dark-blue",
+                  "index": 0,
+                  "text": "LOCAL CONTROL"
+                },
+                "2": {
                   "color": "dark-yellow",
                   "index": 1,
                   "text": "OCCUPIED"
+                },
+                "3": {
+                  "color": "dark-purple",
+                  "index": 2,
+                  "text": "UNOCCUPIED"
                 }
               },
               "type": "value"
@@ -734,12 +739,16 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "dark-purple",
+                "color": "dark-blue",
                 "value": null
               },
               {
                 "color": "dark-yellow",
-                "value": 1
+                "value": 2
+              },
+              {
+                "color": "dark-purple",
+                "value": 3
               }
             ]
           }
