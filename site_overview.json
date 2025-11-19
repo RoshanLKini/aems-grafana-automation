@@ -133,7 +133,7 @@
           }
         }
       ],
-      "title": "EL - Occupancy Status",
+      "title": "Occupancy Status",
       "type": "state-timeline"
     },
     {
@@ -249,7 +249,7 @@
           }
         }
       ],
-      "title": "EL - Occupancy Setpoint Error",
+      "title": "Occupancy Setpoint Error",
       "type": "state-timeline"
     },
     {
@@ -795,7 +795,7 @@
           }
         }
       ],
-      "title": "EL - $RTU Status",
+      "title": "$RTU Status",
       "type": "timeseries"
     },
     {
@@ -935,7 +935,7 @@
           }
         }
       ],
-      "title": "EL - Weather",
+      "title": "Weather",
       "type": "timeseries"
     },
     {
@@ -1045,7 +1045,7 @@
           }
         }
       ],
-      "title": "EL - Building Power",
+      "title": "Building Power",
       "type": "timeseries"
     }
   ],
