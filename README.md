@@ -1,16 +1,18 @@
 # Grafana Dashboard Generator
 
-Automated tool for generating and uploading Grafana dashboards for building automation systems. This tool creates customized RTU (Rooftop Unit) and Site Overview dashboards with device point mapping and automatic API deployment.
+Automated tool for generating and uploading Grafana dashboards for building automation systems. This tool automatically discovers RTU devices from your Grafana datasource and creates separate, customized dashboards for each device with device point mapping and automatic API deployment.
 
 ## Features
 
-- Automated Dashboard Generation: Creates dashboards from templates with customized campus/building prefixes
-- Device Point Mapping: Validates and maps device points from configuration
-- Direct API Upload: Automatically uploads dashboards to Grafana using basic authentication
-- Validation: Checks device points against configured mappings
-- Multiple Visualizations: Gauges, stats, time series with color-coded thresholds
-- Response Logging: Saves API upload responses to JSON files for audit trails
-- Creative Dashboard Design: Temperature gauges, equipment status indicators, setpoint displays
+- **Auto-Device Discovery**: Automatically detects all RTU devices from Grafana PostgreSQL datasource
+- **Separate Dashboards Per Device**: Creates individual dashboard for each RTU device (no dropdown selectors)
+- **Device Point Mapping**: Validates and maps device points from configuration
+- **Direct API Upload**: Automatically uploads dashboards to Grafana using basic authentication
+- **Organized Output**: All generated files saved to `output/` folder (auto-created)
+- **Updated Occupancy Status**: Proper 3-state occupancy mapping (Local Control/Occupied/Unoccupied)
+- **Multiple Visualizations**: Gauges, stats, time series with color-coded thresholds
+- **Response Logging**: Saves API upload responses to JSON files for audit trails
+- **Creative Dashboard Design**: Temperature gauges, equipment status indicators, setpoint displays
 
 ## Prerequisites
 
@@ -20,7 +22,11 @@ Automated tool for generating and uploading Grafana dashboards for building auto
 
 ## Installation
 
-1. Clone or download this repository
+1. Clone or download this repository: 
+```bash
+git clone https://github.com/RoshanLKini/aems-grafana-automation.git
+cd aems-grafana-automation
+```
 2. Install required Python packages:
 ```bash
 pip install requests urllib3
@@ -36,7 +42,7 @@ Create or edit `config.ini` with the following sections:
 [dashboard]
 campus = PNNL
 building = ROB
-output-dir = .
+output-dir = output
 timezone = America/Los_Angeles
 
 [device_mapping]
@@ -64,7 +70,7 @@ verify_ssl = false
 **[dashboard] Section:**
 - `campus`: Campus identifier (e.g., PNNL)
 - `building`: Building identifier (e.g., ROB)
-- `output-dir`: Directory for generated JSON files (default: .)
+- `output-dir`: Directory for generated JSON files (default: output)
 - `timezone`: Timezone for dashboards (default: America/Los_Angeles)
 
 **[device_mapping] Section:**
@@ -89,29 +95,34 @@ This will:
 1. Load configuration from `config.ini`
 2. Connect to Grafana API
 3. Auto-detect PostgreSQL datasource
-4. Load dashboard templates (`rtu_overview.json`, `site_overview.json`)
-5. Generate customized dashboards
-6. Validate device points against mapping
-7. Upload dashboards to Grafana
-8. Save API responses to timestamped JSON file
+4. **Query and discover all RTU devices from Grafana**
+5. Load dashboard templates (`rtu_overview.json`, `site_overview.json`)
+6. **Generate separate dashboard for each device discovered**
+7. Validate device points against mapping
+8. Upload all dashboards to Grafana
+9. Save API responses to timestamped JSON file in `output/` folder
 
 ### Output Files
 
-The script generates the following files:
+The script generates the following files in the `output/` folder:
 
-- `{CAMPUS}_{BUILDING}_RTU_Overview.json` - RTU dashboard for UI import
-- `{CAMPUS}_{BUILDING}_RTU_Overview_import.json` - RTU dashboard for API import
-- `{CAMPUS}_{BUILDING}_Site_Overview.json` - Site dashboard for UI import
-- `{CAMPUS}_{BUILDING}_Site_Overview_import.json` - Site dashboard for API import
-- `{CAMPUS}_{BUILDING}_upload_response_{timestamp}.json` - API upload results
+**Per-Device RTU Dashboards:**
+- `{CAMPUS}_{BUILDING}_{DEVICE}_RTU_Overview.json` - Individual dashboard for each RTU
+  - Example: `PNNL_ROB_rtu01_RTU_Overview.json`
+  - Example: `PNNL_ROB_rtu02_RTU_Overview.json`
+  - Example: `PNNL_ROB_rtu03_RTU_Overview.json`
 
-Example: `PNNL_ROB_RTU_Overview.json`
+**Site Overview:**
+- `{CAMPUS}_{BUILDING}_Site_Overview.json` - Building-wide dashboard
+
+**Upload Responses:**
+- `{CAMPUS}_{BUILDING}_upload_response_{timestamp}.json` - API upload results with device count
 
 ## Dashboard Templates
 
-### RTU Overview Dashboard
+### RTU Overview Dashboard (Per Device)
 
-Displays real-time data for a single RTU (Rooftop Unit):
+Each RTU device gets its own dedicated dashboard with real-time data:
 
 **Temperature & Humidity Section:**
 - Zone Temperature (gauge with color thresholds: 60-80°F)
@@ -125,13 +136,15 @@ Displays real-time data for a single RTU (Rooftop Unit):
 **Equipment Status Section:**
 - Equipment Stage (1st Stage Heating: OFF/HEATING)
 - Supply Fan (OFF/RUNNING)
-- Occupancy Status (UNOCCUPIED/OCCUPIED)
+- **Occupancy Status** (1=Local Control, 2=Occupied, 3=Unoccupied)
 
 **Power Consumption:**
 - Time series graph showing power usage in kW
 
 **Historical Trends:**
 - Full-width time series with all metrics for trend analysis
+
+**Note:** Each device gets its own dashboard - no dropdown selector needed!
 
 ### Site Overview Dashboard
 
@@ -161,23 +174,33 @@ Upload responses are saved with the following structure:
 
 ```json
 {
-  "upload_time": "2025-11-17T10:32:53.384657",
+  "upload_time": "2025-11-18T12:27:07.008484",
   "grafana_url": "https://your-grafana-server.com/grafana",
   "folder_id": 0,
+  "devices_count": 4,
   "responses": [
     {
-      "dashboard": "RTU Overview",
+      "dashboard": "RTU Overview - rtu01",
+      "device": "rtu01",
       "success": true,
       "message": "Dashboard created successfully",
       "data": {
-        "id": 44,
-        "slug": "pnnl-rob-rtu-overview-2025-11-17-103252",
+        "id": 56,
+        "slug": "pnnl-rob-rtu01-overview-2025-11-18-122705",
         "status": "success",
-        "uid": "e90590f3-485b-43bd-a31c-667993ad14a0",
-        "url": "/grafana/d/e90590f3-485b-43bd-a31c-667993ad14a0/...",
+        "uid": "c44cd669-a0ce-4eaf-8fc4-dd5b158cba98",
+        "url": "/grafana/d/c44cd669-a0ce-4eaf-8fc4-dd5b158cba98/...",
         "version": 1
       },
-      "timestamp": "2025-11-17T10:32:52.917207"
+      "timestamp": "2025-11-18T12:27:06.331763"
+    },
+    {
+      "dashboard": "RTU Overview - rtu02",
+      "device": "rtu02",
+      "success": true,
+      "message": "Dashboard created successfully",
+      "data": {...},
+      "timestamp": "2025-11-18T12:27:06.953149"
     }
   ]
 }
@@ -292,8 +315,14 @@ For issues or questions:
 
 ## Version History
 
-- v1.0 - Initial release with RTU and Site Overview dashboards
-- v1.1 - Added device mapping validation
-- v1.2 - Added API response logging
-- v1.3 - Enhanced error handling and validation
-- v1.4 - Improved dashboard design with creative visualizations
+- **v2.0** - Device auto-discovery and separate dashboards per device
+  - Auto-discover devices from Grafana PostgreSQL datasource
+  - Create separate dashboard for each RTU device
+  - Updated occupancy status mappings (1/2/3 instead of 0/1)
+  - Output files organized in `output/` folder
+  - Removed interactive generator (functionality consolidated)
+- **v1.4** - Improved dashboard design with creative visualizations
+- **v1.3** - Enhanced error handling and validation
+- **v1.2** - Added API response logging
+- **v1.1** - Added device mapping validation
+- **v1.0** - Initial release with RTU and Site Overview dashboards
