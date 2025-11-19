@@ -1,28 +1,13 @@
 """
 Grafana Dashboard Generator
-
-This script automates the generation of Grafana dashboards for building automation systems.
-It queries devices from a PostgreSQL datasource, creates separate dashboards for each device,
-and uploads them to Grafana via API.
-
-Features:
-- Auto-discovers devices from Grafana PostgreSQL datasource
-- Creates separate dashboard for each RTU device
-- Generates site overview dashboard
-- Supports basic authentication for Grafana API
-- Validates device point mappings
-- Saves all output to configurable directory
-
-Usage:
-    python generate_dashboards.py
-
-Configuration:
-    Edit config.ini to set campus, building, Grafana credentials, and device mappings
+Automates generation of Grafana dashboards using templates and config.ini
+Supports both file export and direct API upload to Grafana with basic authentication
 """
 
 import json
 import configparser
 from datetime import datetime
+from copy import deepcopy
 import os
 import requests
 import urllib3
@@ -30,7 +15,7 @@ import getpass
 import logging
 from requests.auth import HTTPBasicAuth
 
-# Configure logging to display informational messages
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(levelname)s: %(message)s'
@@ -39,26 +24,14 @@ logging.basicConfig(
 
 def get_variable_values(grafana_api, datasource_uid, campus, building):
     """
-    Query Grafana PostgreSQL datasource to discover all devices for a campus/building.
-    
-    This function queries the topics table to find all devices that have ZoneTemperature
-    data points, which indicates they are active RTU devices.
-    
-    Args:
-        grafana_api: GrafanaAPI instance with connection details
-        datasource_uid: UID of the PostgreSQL datasource in Grafana
-        campus: Campus name (e.g., 'PNNL')
-        building: Building name (e.g., 'ROB')
-    
-    Returns:
-        List of device names (e.g., ['rtu01', 'rtu02', 'rtu03', 'rtu04'])
-        Empty list if query fails or no devices found
+    Query Grafana to get all device values from the PostgreSQL datasource
+    Returns list of device names
     """
     try:
-        # Query to get all RTU devices based on ZoneTemperature topic
+        # Query to get all RTU devices
         query = f"select topic_name from topics where topic_name like '{campus}/{building}/%/ZoneTemperature'"
         
-        # Use Grafana datasource query API to execute the SQL query
+        # Use Grafana datasource query API
         payload = {
             "queries": [{
                 "datasource": {"type": "postgres", "uid": datasource_uid},
@@ -67,7 +40,6 @@ def get_variable_values(grafana_api, datasource_uid, campus, building):
             }]
         }
         
-        # Execute the query via Grafana API
         response = requests.post(
             f'{grafana_api.url}/api/ds/query',
             auth=grafana_api.auth,
@@ -81,7 +53,7 @@ def get_variable_values(grafana_api, datasource_uid, campus, building):
             data = response.json()
             devices = []
             
-            # Parse the response to extract device names from topic paths
+            # Extract device names from topic paths
             if 'results' in data:
                 for result_key in data['results']:
                     result = data['results'][result_key]
@@ -90,8 +62,7 @@ def get_variable_values(grafana_api, datasource_uid, campus, building):
                             if 'data' in frame and 'values' in frame['data']:
                                 for values in frame['data']['values']:
                                     for topic_name in values:
-                                        # Topic format: campus/building/device/point
-                                        # Extract device name (index 2)
+                                        # Extract device name from topic: campus/building/device/point
                                         parts = topic_name.split('/')
                                         if len(parts) >= 3:
                                             device = parts[2]
@@ -109,23 +80,7 @@ def get_variable_values(grafana_api, datasource_uid, campus, building):
 
 
 def load_config(config_file='config.ini'):
-    """
-    Load configuration from INI file.
-    
-    Reads campus/building information, output directory, timezone, and device mappings
-    from the config.ini file.
-    
-    Args:
-        config_file: Path to configuration file (default: 'config.ini')
-    
-    Returns:
-        Dictionary containing configuration values including:
-        - campus: Campus name
-        - building: Building name
-        - output_dir: Directory for generated files
-        - timezone: Timezone for dashboards
-        - device_mapping: Dictionary of device point mappings
-    """
+    """Load configuration from INI file"""
     config = configparser.ConfigParser()
     config.read(config_file)
     
@@ -141,8 +96,8 @@ def load_config(config_file='config.ini'):
         'timezone': config.get(section, 'timezone', fallback='America/Los_Angeles')
     }
     
-    # Load device point mapping from config
-    # Maps generic point names to actual device point names
+    # Load device mapping if available
+    #TODO: here we must get data from device registry
     if config.has_section('device_mapping'):
         result['device_mapping'] = dict(config.items('device_mapping'))
         logging.info(f"Loaded {len(result['device_mapping'])} device mappings from config")
@@ -154,61 +109,27 @@ def load_config(config_file='config.ini'):
 
 
 def load_template(template_file):
-    """
-    Load dashboard template from JSON file.
-    
-    Args:
-        template_file: Path to JSON template file
-    
-    Returns:
-        Dictionary containing dashboard template
-    """
+    """Load dashboard template JSON file"""
     with open(template_file, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
 def replace_topic_prefix(content, old_prefix, new_prefix):
-    """
-    Replace topic name prefix throughout the dashboard JSON.
-    
-    Updates all references from template prefix (e.g., 'PNNL/ROB')
-    to the configured campus/building prefix.
-    
-    Args:
-        content: Dashboard JSON content
-        old_prefix: Old topic prefix to replace
-        new_prefix: New topic prefix
-    
-    Returns:
-        Updated dashboard content
-    """
+    """Replace topic name prefix in JSON content"""
     content_str = json.dumps(content)
     content_str = content_str.replace(old_prefix, new_prefix)
     return json.loads(content_str)
 
 
 def apply_device_mapping(content, device_mapping):
-    """
-    Validate device point mappings against dashboard content.
-    
-    Checks that device points used in the dashboard are defined in the
-    device_mapping section of config.ini. Logs warnings for unmapped points
-    and info for unused mappings.
-    
-    Args:
-        content: Dashboard JSON content
-        device_mapping: Dictionary of device point mappings from config
-    
-    Returns:
-        Unchanged dashboard content (validation only)
-    """
+    """Apply device point name mapping to dashboard content"""
     if not device_mapping:
         logging.warning("No device mapping provided, skipping validation")
         return content
     
     content_str = json.dumps(content)
     
-    # Extract all point names used in the dashboard using regex
+    # Extract all point names used in the dashboard
     import re
     used_points = set(re.findall(r'/([A-Za-z0-9_]+)(?:\'|\s)', content_str))
     
@@ -216,15 +137,14 @@ def apply_device_mapping(content, device_mapping):
     mapped_points = set(device_mapping.values())
     
     # Find points used in dashboard but not in mapping
-    # Exclude known system points that aren't device-specific
     unmapped_points = used_points - mapped_points - {
-        'topics', 'data', 'meter', 'air_temperature', 'Watts'
+        'topics', 'data', 'meter', 'air_temperature', 'Watts'  # Known non-device points
     }
     
     if unmapped_points:
         logging.warning(f"Points in dashboard not in device_mapping: {sorted(unmapped_points)}")
     
-    # Find mapped points not used in dashboard (informational)
+    # Find mapped points not used in dashboard
     unused_mappings = mapped_points - used_points
     if unused_mappings:
         logging.info(f"Mapped points not used in this dashboard: {sorted(unused_mappings)}")
@@ -234,56 +154,45 @@ def apply_device_mapping(content, device_mapping):
 
 def create_dashboard_for_device(template, config, datasource_uid, device):
     """
-    Create a customized dashboard for a single RTU device.
-    
-    Takes the template dashboard and replaces all variable references with
-    the specific device name, creating a dedicated dashboard for that device.
-    
-    Args:
-        template: Dashboard template JSON
-        config: Configuration dictionary
-        datasource_uid: Grafana datasource UID
-        device: Device name (e.g., 'rtu01')
-    
-    Returns:
-        Dictionary containing configured dashboard for the device
+    Create a dashboard for a single device based on template
+    Returns configured dashboard for the specific device
     """
-    # Create deep copy to avoid modifying template
-    dashboard = json.loads(json.dumps(template))
+    dashboard = json.loads(json.dumps(template))  # Deep copy
     
     campus = config['campus']
     building = config['building']
     
-    # Replace all variable references with actual device name
-    # This converts dashboard from using $RTU_ROB variable to fixed device name
+    # Replace variable references with actual device name throughout dashboard
     dashboard_str = json.dumps(dashboard)
     dashboard_str = dashboard_str.replace('$RTU_ROB', device)
     dashboard_str = dashboard_str.replace('${RTU_ROB}', device)
     dashboard_str = dashboard_str.replace('PNNL/ROB', f"{campus}/{building}")
     dashboard = json.loads(dashboard_str)
     
-    # Clean up panel titles to avoid redundancy
-    # In a single-device dashboard, we don't need device name in every panel title
+    # Update panel titles to remove redundant device name if it's already in title
     if 'panels' in dashboard:
         for panel in dashboard['panels']:
             if 'title' in panel:
-                # Panel titles are already updated via string replacement above
-                # No additional modification needed
-                pass
+                # If title was just the variable, replace with device name
+                if panel['title'] == device:
+                    continue  # Already set correctly
+                # If title contains device name, keep as is
+                elif device in panel['title']:
+                    continue
+                # Otherwise, don't add device name to avoid redundancy in single-device dashboard
     
-    # Remove templating variables since we're using a fixed device name
-    # Variables are not needed when dashboard is device-specific
+    # Remove templating variables since we're using fixed device name
     if 'templating' in dashboard:
         dashboard['templating']['list'] = []
     
-    # Update dashboard metadata with device-specific information
+    # Update dashboard metadata
     timestamp = datetime.now().strftime('%Y-%m-%d %H%M%S')
     dashboard['title'] = f"{campus} {building} - {device} Overview {timestamp}"
-    dashboard['id'] = None  # Let Grafana assign new ID
-    dashboard['uid'] = None  # Let Grafana assign new UID
-    dashboard['version'] = 0  # Start at version 0
+    dashboard['id'] = None
+    dashboard['uid'] = None
+    dashboard['version'] = 0
     
-    # Update datasource UID to point to correct PostgreSQL datasource
+    # Update datasource UID if provided
     if datasource_uid:
         update_datasource_uid(dashboard, datasource_uid)
     
@@ -292,44 +201,32 @@ def create_dashboard_for_device(template, config, datasource_uid, device):
 
 def generate_rtu_overview(template, config, datasource_uid, grafana_api=None, devices=None):
     """
-    Generate RTU Overview dashboards from template.
+    Generate RTU Overview dashboard(s) from template.
     
-    This function auto-discovers devices from Grafana and creates a separate
-    dashboard for each device found. If no devices are found, creates a single
-    dashboard with variable selector.
-    
-    Args:
-        template: Dashboard template JSON
-        config: Configuration dictionary
-        datasource_uid: Grafana PostgreSQL datasource UID
-        grafana_api: GrafanaAPI instance (optional, for device discovery)
-        devices: List of device names (optional, will query if not provided)
-    
-    Returns:
-        List of dictionaries, each containing:
-        - dashboard: Dashboard JSON
-        - device: Device name (or None for variable-based dashboard)
-        - filename: Suggested filename for the dashboard
+    Returns tuple: (list of dashboards, list of devices)
+    - dashboards: List of dashboard dictionaries (one per device if multiple devices found)
+    - devices: List of device names that were discovered or provided
     """
     campus = config['campus']
     building = config['building']
     
-    # Auto-discover devices from Grafana if not provided
-    if devices is None and grafana_api is not None:
+    # Get devices if not provided and grafana_api is available
+    discovered_devices = devices
+    if discovered_devices is None and grafana_api is not None:
         logging.info(f"Querying devices from Grafana for {campus}/{building}...")
-        devices = get_variable_values(grafana_api, datasource_uid, campus, building)
-        if devices:
-            logging.info(f"Found {len(devices)} devices: {', '.join(devices)}")
+        discovered_devices = get_variable_values(grafana_api, datasource_uid, campus, building)
+        if discovered_devices:
+            logging.info(f"Found {len(discovered_devices)} devices: {', '.join(discovered_devices)}")
         else:
             logging.warning("No devices found, using template defaults")
-            devices = None
+            discovered_devices = None
     
     dashboards = []
     
-    # Create separate dashboard for each device
-    if devices and len(devices) > 0:
-        logging.info(f"Creating separate dashboard for each of {len(devices)} devices...")
-        for device in devices:
+    # If we have multiple devices, create separate dashboard for each
+    if discovered_devices and len(discovered_devices) > 0:
+        logging.info(f"Creating separate dashboard for each of {len(discovered_devices)} devices...")
+        for device in discovered_devices:
             dashboard = create_dashboard_for_device(template, config, datasource_uid, device)
             dashboards.append({
                 'dashboard': dashboard,
@@ -337,8 +234,7 @@ def generate_rtu_overview(template, config, datasource_uid, grafana_api=None, de
                 'filename': f"{campus}_{building}_{device}_RTU_Overview.json"
             })
     else:
-        # Fallback: Single dashboard with variable selector
-        # Used when device auto-discovery fails or returns no results
+        # Single device mode - keep template as is with variables
         dashboard = template.copy()
         new_prefix = f"{campus}/{building}"
         
@@ -365,17 +261,47 @@ def generate_rtu_overview(template, config, datasource_uid, grafana_api=None, de
             'filename': f"{campus}_{building}_RTU_Overview.json"
         })
     
-    return dashboards
+    return dashboards, discovered_devices
 
 
-def generate_site_overview(template, config, datasource_uid):
-    """Generate Site Overview dashboard from template"""
-    dashboard = template.copy()
+def generate_site_overview(template, config, datasource_uid, grafana_api=None, devices=None):
+    """
+    Generate Site Overview dashboard from template.
+    
+    Updates state-timeline panels to include all discovered devices dynamically.
+    
+    Args:
+        template: Dashboard template JSON
+        config: Configuration dictionary
+        datasource_uid: Grafana PostgreSQL datasource UID
+        grafana_api: GrafanaAPI instance (optional, for device discovery)
+        devices: List of device names (optional, will query if not provided)
+    
+    Returns:
+        Dashboard dictionary with updated queries for all devices
+    """
+    # Use deep copy to avoid modifying the template
+    dashboard = deepcopy(template)
     
     # Build the topic prefix from config
     campus = config['campus']
     building = config['building']
     new_prefix = f"{campus}/{building}"
+    
+    # Auto-discover devices from Grafana if not provided
+    if devices is None and grafana_api is not None:
+        logging.info(f"Querying devices from Grafana for site overview...")
+        devices = get_variable_values(grafana_api, datasource_uid, campus, building)
+        if devices:
+            logging.info(f"Found {len(devices)} devices for site overview: {', '.join(devices)}")
+        else:
+            logging.warning("No devices found for site overview, using template defaults")
+            devices = None
+    
+    # Update state-timeline panels with dynamic device queries
+    if devices and len(devices) > 0:
+        logging.info(f"Updating state-timeline panels with {len(devices)} devices...")
+        update_statetimeline_panels(dashboard, devices, campus, building)
     
     # Replace the topic prefix in the entire dashboard
     dashboard = replace_topic_prefix(dashboard, "PNNL/ROB", new_prefix)
@@ -395,6 +321,133 @@ def generate_site_overview(template, config, datasource_uid):
         update_datasource_uid(dashboard, datasource_uid)
     
     return dashboard
+
+
+def update_statetimeline_panels(dashboard, devices, campus, building):
+    """
+    Update state-timeline panels to include all discovered devices.
+    
+    Dynamically builds SQL queries with CASE statements for each device.
+    Handles both simple queries and CTE-based queries (e.g., temperature setpoint error).
+    
+    Args:
+        dashboard: Dashboard JSON to update
+        devices: List of device names
+        campus: Campus name
+        building: Building name
+    """
+    import re
+    
+    # Panels that should be updated (state-timeline type)
+    for panel in dashboard.get('panels', []):
+        if panel.get('type') == 'state-timeline' and 'targets' in panel:
+            for target in panel['targets']:
+                if 'rawSql' in target:
+                    query = target['rawSql']
+                    
+                    # Check if this is a CTE query (contains WITH clause)
+                    if 'WITH' in query.upper() and 'zone_temps' in query.lower():
+                        # This is the temperature setpoint error query with CTEs
+                        update_cte_query(target, devices, campus, building)
+                    else:
+                        # Simple query - extract metric and rebuild
+                        metric_match = re.search(r"'[^']+/([A-Za-z]+)'", query)
+                        
+                        if metric_match:
+                            metric = metric_match.group(1)
+                            
+                            # Build CASE statements for all devices
+                            case_statements = []
+                            for device in devices:
+                                case_stmt = f"  MAX(CASE WHEN upper(split_part(topic_name, '/', 3)) = '{device.upper()}' THEN cast(value_string as float) END) AS {device}"
+                                case_statements.append(case_stmt)
+                            
+                            cases_sql = ',\n'.join(case_statements)
+                            
+                            # Build new query
+                            new_query = f"""SELECT
+  $__timeGroup(ts, $__interval) AS time,
+{cases_sql}
+FROM data
+NATURAL JOIN topics
+WHERE topic_name LIKE '{campus}/{building}/%/{metric}'
+  AND $__timeFilter(ts)
+GROUP BY 1
+ORDER BY 1
+"""
+                            target['rawSql'] = new_query
+                            logging.info(f"Updated state-timeline panel with {len(devices)} devices for metric: {metric}")
+
+
+def update_cte_query(target, devices, campus, building):
+    """
+    Update CTE-based query (e.g., temperature setpoint error) with discovered devices.
+    Uses uppercase device names in column aliases (RTU01, RTU02, etc.) to match expected format.
+    
+    Args:
+        target: Query target to update
+        devices: List of device names
+        campus: Campus name
+        building: Building name
+    """
+    # Build CASE statements for zone_temps CTE (using uppercase device names in aliases)
+    temp_cases = []
+    for device in devices:
+        device_upper = device.upper()
+        temp_case = f"    MAX(CASE WHEN upper(split_part(topic_name, '/', 3)) = '{device_upper}' THEN cast(value_string as float) END) AS {device_upper}_temp"
+        temp_cases.append(temp_case)
+    
+    temp_cases_sql = ',\n'.join(temp_cases)
+    
+    # Build CASE statements for zone_setpoints CTE (using uppercase device names in aliases)
+    sp_cases = []
+    for device in devices:
+        device_upper = device.upper()
+        sp_case = f"    MAX(CASE WHEN upper(split_part(topic_name, '/', 3)) = '{device_upper}' THEN cast(value_string as float) END) AS {device_upper}_sp"
+        sp_cases.append(sp_case)
+    
+    sp_cases_sql = ',\n'.join(sp_cases)
+    
+    # Build SELECT columns for final query (using uppercase device names)
+    select_cols = []
+    for device in devices:
+        device_upper = device.upper()
+        select_col = f"  t.{device_upper}_temp - s.{device_upper}_sp AS {device_upper}"
+        select_cols.append(select_col)
+    
+    select_cols_sql = ',\n'.join(select_cols)
+    
+    # Build complete CTE query
+    new_query = f"""WITH zone_temps AS (
+  SELECT
+    $__timeGroup(ts, $__interval) AS time,
+{temp_cases_sql}
+  FROM data
+  NATURAL JOIN topics
+  WHERE topic_name LIKE '{campus}/{building}/%/ZoneTemperature'
+    AND $__timeFilter(ts)
+  GROUP BY 1
+),
+zone_setpoints AS (
+  SELECT
+    $__timeGroup(ts, $__interval) AS time,
+{sp_cases_sql}
+  FROM data
+  NATURAL JOIN topics
+  WHERE topic_name LIKE '{campus}/{building}/%/EffectiveZoneTemperatureSetPoint'
+    AND $__timeFilter(ts)
+  GROUP BY 1
+)
+SELECT
+  t.time,
+{select_cols_sql}
+FROM zone_temps t
+JOIN zone_setpoints s ON t.time = s.time
+ORDER BY t.time
+"""
+    
+    target['rawSql'] = new_query
+    logging.info(f"Updated CTE query (temperature setpoint error) with {len(devices)} devices")
 
 
 def update_datasource_uid(dashboard, datasource_uid):
@@ -696,7 +749,7 @@ def main():
     building = config['building']
     
     # Generate RTU Overview dashboards (one per device if multiple devices found)
-    rtu_dashboards = generate_rtu_overview(rtu_template, config, datasource_uid, grafana_api=grafana_api)
+    rtu_dashboards, devices = generate_rtu_overview(rtu_template, config, datasource_uid, grafana_api=grafana_api)
     
     # Save each RTU dashboard
     rtu_filepaths = []
@@ -713,8 +766,8 @@ def main():
         else:
             logging.info(f"Generated RTU Overview: {filepath}")
     
-    # Generate Site Overview
-    site_dashboard = generate_site_overview(site_template, config, datasource_uid)
+    # Generate Site Overview (pass devices for dynamic state-timeline panels)
+    site_dashboard = generate_site_overview(site_template, config, datasource_uid, grafana_api, devices)
     site_filename = f"{campus}_{building}_Site_Overview.json"
     site_filepath = save_dashboard(site_dashboard, site_filename, config['output_dir'])
     logging.info(f"Generated Site Overview: {site_filepath}")
