@@ -9,10 +9,12 @@ import configparser
 from datetime import datetime
 from copy import deepcopy
 import os
+import re
 import requests
 import urllib3
 import getpass
 import logging
+from urllib.parse import urlparse
 from requests.auth import HTTPBasicAuth
 
 # Configure logging
@@ -130,7 +132,6 @@ def apply_device_mapping(content, device_mapping):
     content_str = json.dumps(content)
     
     # Extract all point names used in the dashboard
-    import re
     used_points = set(re.findall(r'/([A-Za-z0-9_]+)(?:\'|\s)', content_str))
     
     # Get mapped point names (values from config)
@@ -184,7 +185,7 @@ def create_dashboard_for_device(template, config, datasource_uid, device):
     # Remove templating variables since we're using fixed device name
     if 'templating' in dashboard:
         dashboard['templating']['list'] = []
-    
+    #TODO: In final version remove timestamp
     # Update dashboard metadata
     timestamp = datetime.now().strftime('%Y-%m-%d %H%M%S')
     dashboard['title'] = f"{campus} {building} - {device} Overview {timestamp}"
@@ -336,7 +337,6 @@ def update_statetimeline_panels(dashboard, devices, campus, building):
         campus: Campus name
         building: Building name
     """
-    import re
     
     # Panels that should be updated (state-timeline type)
     for panel in dashboard.get('panels', []):
@@ -514,13 +514,11 @@ class GrafanaAPI:
         }
         
         if not verify_ssl:
-            import urllib3
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     
     def test_connection(self):
         """Test connection to Grafana API"""
         try:
-            import requests
             response = requests.get(
                 f'{self.url}/api/health',
                 auth=self.auth,
@@ -536,7 +534,6 @@ class GrafanaAPI:
     def get_datasources(self):
         """Get list of datasources"""
         try:
-            import requests
             response = requests.get(
                 f'{self.url}/api/datasources',
                 auth=self.auth,
@@ -564,7 +561,6 @@ class GrafanaAPI:
             tuple: (success, message, response_data)
         """
         try:
-            import requests
             payload = {
                 "dashboard": dashboard,
                 "folderId": folder_id,
@@ -599,7 +595,6 @@ class GrafanaAPI:
     def get_folders(self):
         """Get list of folders"""
         try:
-            import requests
             response = requests.get(
                 f'{self.url}/api/folders',
                 auth=self.auth,
@@ -773,7 +768,7 @@ def main():
     logging.info(f"Generated Site Overview: {site_filepath}")
     
     # Upload to Grafana via API
-    upload_responses = []
+    dashboard_urls = []  # Collect URLs for output file
     if grafana_api:
         step_num += 1
         print(f"\n[{step_num}/6] Uploading dashboards to Grafana...")
@@ -786,18 +781,24 @@ def main():
             success, message, data = grafana_api.create_dashboard(dashboard, folder_id)
             
             dashboard_name = f"RTU Overview - {device}" if device else "RTU Overview"
-            rtu_response = {
-                'dashboard': dashboard_name,
-                'device': device,
-                'success': success,
-                'message': message,
-                'data': data,
-                'timestamp': datetime.now().isoformat()
-            }
-            upload_responses.append(rtu_response)
             
             if success:
-                dashboard_url = f"{grafana_config['url']}{data.get('url', '')}"
+                # Grafana API returns full path including subpath (e.g., /grafana/d/...)
+                # Extract just the path portion and combine with base domain
+                api_path = data.get('url', '')
+                
+                # Extract base domain from config URL (e.g., https://aems1.pnl.gov from https://aems1.pnl.gov/grafana)
+                parsed = urlparse(grafana_config['url'])
+                base_url = f"{parsed.scheme}://{parsed.netloc}"
+                
+                dashboard_url = f"{base_url}{api_path}?orgId=1"
+                
+                # Add to URLs collection
+                dashboard_urls.append({
+                    'dashboard': dashboard_name,
+                    'url': dashboard_url
+                })
+                
                 logging.info(f"{dashboard_name} uploaded")
                 logging.info(f"URL: {dashboard_url}")
             else:
@@ -805,35 +806,36 @@ def main():
         
         # Upload Site Overview
         success, message, data = grafana_api.create_dashboard(site_dashboard, folder_id)
-        site_response = {
-            'dashboard': 'Site Overview',
-            'success': success,
-            'message': message,
-            'data': data,
-            'timestamp': datetime.now().isoformat()
-        }
-        upload_responses.append(site_response)
         
         if success:
-            dashboard_url = f"{grafana_config['url']}{data.get('url', '')}"
+            # Grafana API returns full path including subpath (e.g., /grafana/d/...)
+            # Extract just the path portion and combine with base domain
+            api_path = data.get('url', '')
+            
+            # Extract base domain from config URL (e.g., https://aems1.pnl.gov from https://aems1.pnl.gov/grafana)
+            parsed = urlparse(grafana_config['url'])
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+            
+            dashboard_url = f"{base_url}{api_path}?orgId=1"
+            
+            # Add to URLs collection
+            dashboard_urls.append({
+                'dashboard': 'Site Overview',
+                'url': dashboard_url
+            })
+            
             logging.info(f"Site Overview uploaded")
             logging.info(f"URL: {dashboard_url}")
         else:
             logging.error(f"Site Overview failed: {message}")
         
-        # Save upload responses to file
-        response_output = {
-            'upload_time': datetime.now().isoformat(),
-            'grafana_url': grafana_config['url'],
-            'folder_id': folder_id,
-            'devices_count': len(rtu_filepaths),
-            'responses': upload_responses
-        }
-        response_filename = f"{campus}_{building}_upload_response_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        response_filepath = os.path.join(config['output_dir'], response_filename)
-        with open(response_filepath, 'w', encoding='utf-8') as f:
-            json.dump(response_output, f, indent=2, ensure_ascii=False)
-        logging.info(f"Upload responses saved to: {response_filepath}")
+        # Save dashboard URLs to separate file for easy access
+        if dashboard_urls:
+            urls_filename = f"{campus}_{building}_dashboard_urls.json"
+            urls_filepath = os.path.join(config['output_dir'], urls_filename)
+            with open(urls_filepath, 'w', encoding='utf-8') as f:
+                json.dump(dashboard_urls, f, indent=2, ensure_ascii=False)
+            logging.info(f"Dashboard URLs saved to: {urls_filepath}")
     
     # Summary
     step_num += 1

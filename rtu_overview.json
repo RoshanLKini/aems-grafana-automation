@@ -33,32 +33,14 @@
             "mode": "thresholds"
           },
           "mappings": [],
+          "max": 100,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "dark-blue",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": 60
-              },
-              {
                 "color": "green",
-                "value": 68
-              },
-              {
-                "color": "yellow",
-                "value": 72
-              },
-              {
-                "color": "orange",
-                "value": 76
-              },
-              {
-                "color": "red",
-                "value": 80
+                "value": null
               }
             ]
           },
@@ -67,9 +49,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 9,
-        "w": 6,
-        "x": 0,
+        "h": 6,
+        "w": 3,
+        "x": 6,
         "y": 0
       },
       "id": 6,
@@ -84,7 +66,7 @@
           "fields": "",
           "values": false
         },
-        "showThresholdLabels": false,
+        "showThresholdLabels": true,
         "showThresholdMarkers": true
       },
       "pluginVersion": "10.2.2",
@@ -132,32 +114,14 @@
             "mode": "thresholds"
           },
           "mappings": [],
+          "max": 100,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "light-blue",
                 "value": null
-              },
-              {
-                "color": "orange",
-                "value": 25
-              },
-              {
-                "color": "green",
-                "value": 30
-              },
-              {
-                "color": "yellow",
-                "value": 50
-              },
-              {
-                "color": "orange",
-                "value": 60
-              },
-              {
-                "color": "red",
-                "value": 70
               }
             ]
           },
@@ -166,9 +130,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 9,
-        "w": 6,
-        "x": 6,
+        "h": 6,
+        "w": 3,
+        "x": 3,
         "y": 0
       },
       "id": 7,
@@ -183,7 +147,7 @@
           "fields": "",
           "values": false
         },
-        "showThresholdLabels": false,
+        "showThresholdLabels": true,
         "showThresholdMarkers": true
       },
       "pluginVersion": "10.2.2",
@@ -231,32 +195,14 @@
             "mode": "thresholds"
           },
           "mappings": [],
+          "max": 120,
+          "min": -40,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "dark-purple",
+                "color": "purple",
                 "value": null
-              },
-              {
-                "color": "semi-dark-blue",
-                "value": 32
-              },
-              {
-                "color": "light-blue",
-                "value": 50
-              },
-              {
-                "color": "super-light-green",
-                "value": 70
-              },
-              {
-                "color": "yellow",
-                "value": 85
-              },
-              {
-                "color": "dark-orange",
-                "value": 95
               }
             ]
           },
@@ -265,9 +211,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 9,
-        "w": 6,
-        "x": 12,
+        "h": 6,
+        "w": 3,
+        "x": 0,
         "y": 0
       },
       "id": 8,
@@ -282,7 +228,7 @@
           "fields": "",
           "values": false
         },
-        "showThresholdLabels": false,
+        "showThresholdLabels": true,
         "showThresholdMarkers": true
       },
       "pluginVersion": "10.2.2",
@@ -331,24 +277,14 @@
           },
           "decimals": 1,
           "mappings": [],
+          "max": 80,
+          "min": 60,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "dark-red",
+                "color": "purple",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 65
-              },
-              {
-                "color": "orange",
-                "value": 68
-              },
-              {
-                "color": "green",
-                "value": 70
               }
             ]
           },
@@ -357,16 +293,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
+        "h": 6,
+        "w": 3,
+        "x": 9,
         "y": 0
       },
       "id": 9,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
+        "minVizHeight": 75,
+        "minVizWidth": 75,
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
@@ -375,8 +310,8 @@
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name",
-        "wideLayout": true
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
       },
       "pluginVersion": "10.2.2",
       "targets": [
@@ -410,7 +345,7 @@
         }
       ],
       "title": "Heating Setpoint",
-      "type": "stat"
+      "type": "gauge"
     },
     {
       "datasource": {
@@ -424,24 +359,14 @@
           },
           "decimals": 1,
           "mappings": [],
+          "max": 80,
+          "min": 60,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "super-light-blue",
                 "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 72
-              },
-              {
-                "color": "light-blue",
-                "value": 74
-              },
-              {
-                "color": "dark-blue",
-                "value": 76
               }
             ]
           },
@@ -450,16 +375,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 4
+        "h": 6,
+        "w": 3,
+        "x": 12,
+        "y": 0
       },
       "id": 10,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
+        "minVizHeight": 75,
+        "minVizWidth": 75,
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
@@ -468,8 +392,8 @@
           "fields": "",
           "values": false
         },
-        "textMode": "value_and_name",
-        "wideLayout": true
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
       },
       "pluginVersion": "10.2.2",
       "targets": [
@@ -503,7 +427,7 @@
         }
       ],
       "title": "Cooling Setpoint",
-      "type": "stat"
+      "type": "gauge"
     },
     {
       "datasource": {
@@ -519,14 +443,14 @@
             {
               "options": {
                 "0": {
-                  "color": "dark-blue",
+                  "color": "light-red",
                   "index": 0,
                   "text": "OFF"
                 },
                 "1": {
-                  "color": "dark-orange",
+                  "color": "light-orange",
                   "index": 1,
-                  "text": "HEATING"
+                  "text": "ON"
                 }
               },
               "type": "value"
@@ -536,12 +460,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "semi-dark-blue",
+                "color": "super-light-green",
                 "value": null
-              },
-              {
-                "color": "dark-orange",
-                "value": 1
               }
             ]
           }
@@ -549,15 +469,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 9
+        "h": 6,
+        "w": 2,
+        "x": 18,
+        "y": 0
       },
       "id": 11,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
+        "colorMode": "value",
+        "graphMode": "area",
         "justifyMode": "center",
         "orientation": "vertical",
         "reduceOptions": {
@@ -618,14 +538,14 @@
             {
               "options": {
                 "0": {
-                  "color": "dark-red",
+                  "color": "light-red",
                   "index": 0,
                   "text": "OFF"
                 },
                 "1": {
-                  "color": "dark-green",
+                  "color": "super-light-green",
                   "index": 1,
-                  "text": "RUNNING"
+                  "text": "ON"
                 }
               },
               "type": "value"
@@ -635,12 +555,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "dark-red",
+                "color": "yellow",
                 "value": null
-              },
-              {
-                "color": "dark-green",
-                "value": 1
               }
             ]
           }
@@ -648,15 +564,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 9
+        "h": 6,
+        "w": 2,
+        "x": 20,
+        "y": 0
       },
       "id": 12,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
+        "colorMode": "value",
+        "graphMode": "area",
         "justifyMode": "center",
         "orientation": "vertical",
         "reduceOptions": {
@@ -717,17 +633,17 @@
             {
               "options": {
                 "1": {
-                  "color": "dark-blue",
+                  "color": "light-blue",
                   "index": 0,
                   "text": "LOCAL CONTROL"
                 },
                 "2": {
-                  "color": "dark-yellow",
+                  "color": "light-yellow",
                   "index": 1,
                   "text": "OCCUPIED"
                 },
                 "3": {
-                  "color": "dark-purple",
+                  "color": "light-purple",
                   "index": 2,
                   "text": "UNOCCUPIED"
                 }
@@ -739,16 +655,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "dark-blue",
+                "color": "red",
                 "value": null
-              },
-              {
-                "color": "dark-yellow",
-                "value": 2
-              },
-              {
-                "color": "dark-purple",
-                "value": 3
               }
             ]
           }
@@ -756,15 +664,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 9
+        "h": 6,
+        "w": 3,
+        "x": 15,
+        "y": 0
       },
       "id": 13,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
+        "colorMode": "value",
+        "graphMode": "area",
         "justifyMode": "center",
         "orientation": "vertical",
         "reduceOptions": {
@@ -819,104 +727,58 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Power (kW)",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 25,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "line"
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "light-red",
+                  "index": 0,
+                  "text": "OFF"
+                },
+                "1": {
+                  "color": "dark-blue",
+                  "index": 1,
+                  "text": "ON"
+                }
+              },
+              "type": "value"
             }
-          },
-          "decimals": 2,
-          "mappings": [],
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 3
-              },
-              {
-                "color": "orange",
-                "value": 5
-              },
-              {
-                "color": "red",
-                "value": 7
-              }
-            ]
-          },
-          "unit": "kwatt"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Power"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
               }
             ]
           }
-        ]
+        },
+        "overrides": []
       },
       "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 9
+        "h": 6,
+        "w": 2,
+        "x": 22,
+        "y": 0
       },
-      "id": 14,
+      "id": 15,
       "options": {
-        "legend": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "vertical",
+        "reduceOptions": {
           "calcs": [
-            "mean",
-            "max"
+            "lastNotNull"
           ],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+        "textMode": "value",
+        "wideLayout": true
       },
       "pluginVersion": "10.2.2",
       "targets": [
@@ -928,7 +790,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ts as \"time\", cast(value_string as float)/1000 as \"Power\" from data natural join topics where topic_name like 'PNNL/ROB/$RTU_ROB/Watts' AND $__timeFilter(ts) ORDER BY 1;",
+          "rawSql": "SELECT\n  $__timeGroup(ts, '1m') AS \"time\",\n  SUM(CAST(value_string AS DOUBLE PRECISION)) AS \"CoolingStage\"\nFROM data\nNATURAL JOIN topics\nWHERE topic_name LIKE 'PNNL/ROB/$RTU_ROB/%StageCooling'\n  AND $__timeFilter(ts)\nGROUP BY 1\nORDER BY 1;",
           "refId": "A",
           "sql": {
             "columns": [
@@ -949,8 +811,8 @@
           }
         }
       ],
-      "title": "Power Consumption",
-      "type": "timeseries"
+      "title": "Cooling Stage",
+      "type": "stat"
     },
     {
       "datasource": {
@@ -1409,7 +1271,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 6
       },
       "id": 5,
       "options": {
